@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="images/favicon.ico" type="image/x-icon">
+    <title>Yaproom</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center; /* Center vertically */
+            height: 100vh;
+            margin: 0;
+        }
+        #chat-container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+            width: 600px; /* Increased width to accommodate user list */
+            display: flex; /* Use flexbox to organize layout */
+            flex-direction: column; /* Align items in a column */
+        }
+        #chat-box {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 10px; /* Space between chat box and input area */
+        }
+        #chat-box p {
+            margin: 5px 0;
+        }
+        #input-container {
+            display: flex; /* Flexbox for input and button alignment */
+            width: 100%;
+        }
+        #message-input {
+            flex: 1; /* Input takes up available space */
+            padding: 10px;
+        }
+        #send-btn, #upload-btn {
+            width: 50px;
+            padding: 10px;
+            margin-left: 10px; /* Space between input and button */
+        }
+        #user-list-container {
+            width: 200px; /* Fixed width for user list */
+            padding: 10px;
+            border: 1px solid #ddd;
+            background-color: #fff;
+            border-radius: 5px;
+            box-shadow: 0px 0px 5px rgba(0, 0, 0, 0.1);
+            margin-right: 20px; /* Space between user list and chat */
+            height: 300px; /* Match the height of the chat box */
+            overflow-y: auto; /* Allow scrolling if the list is too long */
+        }
+        #user-list {
+            list-style-type: disc; /* Use bullet points for list items */
+            padding-left: 20px; /* Indent bullet points */
+        }
+        #username-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        #username-modal div {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="user-list-container">
+        <h3>Online Users</h3>
+        <ul id="user-list"></ul>
+    </div>
+
+    <div id="chat-container">
+        <div id="chat-box"></div>
+        <div id="input-container">
+            <input type="text" id="message-input" placeholder="Type a message...">
+            <button id="send-btn">Send</button>
+            <input type="file" id="file-input" accept="image/*" style="display: none;">
+            <button id="upload-btn">Upload</button>
+        </div>
+    </div>
+
+    <div id="username-modal">
+        <div>
+            <h2>Enter your username</h2>
+            <input type="text" id="username-input" placeholder="Username">
+            <button id="save-username-btn">Save</button>
+        </div>
+    </div>
+
+    <script>
+        let username = ''; // Use let instead of const to update the username later
+
+        document.getElementById('save-username-btn').addEventListener('click', () => {
+            const input = document.getElementById('username-input');
+
+            username = input.value.trim(); // Update the username variable here
+            if (username !== '' && !username.includes(":")) {
+                document.getElementById('username-modal').style.display = 'none';
+                ws.send(`USERNAME:${username}`); // Send the username to the server
+            } else {
+                alert('Please enter a valid username (no colons allowed).');
+            }
+        });
+
+        const ws = new WebSocket('ws://localhost:8080');
+
+        ws.onopen = () => {
+            console.log("WebSocket connection established.");
+        };
+
+        ws.onmessage = function(event) {
+            const messageText = event.data; // Directly use event.data
+            console.log("Received message:", messageText); // Debugging: Log the received message
+
+            const chatBox = document.getElementById('chat-box');
+
+            // Check if the message is an image
+            if (messageText.startsWith('IMAGE:')) {
+                const imgSrc = messageText.slice(6); // Remove 'IMAGE:' prefix
+                const imgElement = document.createElement('img');
+                imgElement.src = imgSrc;
+                imgElement.style.maxWidth = '200px'; // Limit image size
+                const imgMessage = document.createElement('p');
+                imgMessage.innerHTML = `${username}:`; // Only show username
+                chatBox.appendChild(imgMessage);
+                chatBox.appendChild(imgElement); // Append image below the username
+            } else if (messageText.startsWith('USER_LIST:')) {
+                const usersList = messageText.split(':')[1];
+                updateOnlineUsers(usersList.split(',')); // Update online users
+            } else {
+                const message = document.createElement('p');
+                message.innerHTML = messageText;
+                chatBox.appendChild(message);
+            }
+
+            chatBox.scrollTop = chatBox.scrollHeight; // Auto-scroll to the latest message
+        };
+
+        ws.onerror = (error) => {
+            console.error("WebSocket error:", error);
+        };
+
+        document.getElementById('send-btn').addEventListener('click', () => {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            if (message !== '' && username !== '') {
+                const fullMessage = `${username}: ${message}`;
+                console.log("Sending message:", fullMessage); // Debugging: Log the message being sent
+                ws.send(fullMessage);
+                input.value = '';
+            }
+        });
+
+        document.getElementById('upload-btn').addEventListener('click', () => {
+            document.getElementById('file-input').click(); // Trigger file input click
+        });
+
+        document.getElementById('file-input').addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onloadend = function() {
+                    const base64String = reader.result; // Get base64 encoded string
+                    ws.send(`IMAGE:${base64String}`); // Send image
+                };
+                reader.readAsDataURL(file); // Read file as data URL
+            }
+        });
+
+        document.getElementById('message-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('send-btn').click();
+            }
+        });
+
+        function updateOnlineUsers(users) {
+            const onlineUsersContainer = document.getElementById('user-list'); // Fixed the ID here
+            onlineUsersContainer.innerHTML = ''; // Clear existing list
+            users.forEach(user => {
+                const userElement = document.createElement('li'); // Change to <li> for list items
+                userElement.textContent = user;
+                onlineUsersContainer.appendChild(userElement); // Add each user to the online users container
+            });
+        }
+    </script>
+</body>
+</html>
